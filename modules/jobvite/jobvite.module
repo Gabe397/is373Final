@@ -1,0 +1,409 @@
+<?php
+
+/**
+ * @file
+ * Hook implementations and shared function for the Jobvite module.
+ */
+
+/**
+ * Implements hook_permission().
+ */
+function jobvite_permission() {
+  return array(
+    'administer jobvite' => array(
+      'title' => t('Administer Jobvite module'),
+      'description' => t('Configuration access key and filter for the importation of jobvite.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function jobvite_menu() {
+  $prefix_path = variable_get('jobvite_path_prefix', "");
+  $count_arg = substr_count($prefix_path, "/");
+  $items['admin/config/services/jobvite'] = array(
+    'title' => 'Jobvite settings',
+    'description' => 'Configure Jobvite API settings.',
+    'access arguments' => array('administer jobvite'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('jobvite_admin_form'),
+    'file' => 'jobvite.admin.inc',
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items[$prefix_path . 'job/%jobvite_job'] = array(
+    'access arguments' => array('access content'),
+    'title callback' => 'jobvite_job_page_title',
+    'title arguments' => array($count_arg + 1),
+    'page callback' => 'jobvite_job_page',
+    'page arguments' => array($count_arg + 1),
+    'file' => 'jobvite.pages.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items[$prefix_path . '%/job/%jobvite_job'] = array(
+    'title' => 'Job detail',
+    'title callback' => 'jobvite_job_page_title',
+    'title arguments' => array($count_arg + 2),
+    'access arguments' => array('access content'),
+    'page callback' => 'jobvite_job_page',
+    'page arguments' => array($count_arg + 2),
+    'file' => 'jobvite.pages.inc',
+  );
+
+  $items[$prefix_path . '%/%/job/%jobvite_job'] = array(
+    'title' => 'Job detail',
+    'title callback' => 'jobvite_job_page_title',
+    'title arguments' => array($count_arg + 3),
+    'access arguments' => array('access content'),
+    'page callback' => 'jobvite_job_page',
+    'page arguments' => array($count_arg + 3),
+    'file' => 'jobvite.pages.inc',
+  );
+
+  $items[$prefix_path . 'jobs'] = array(
+    'title' => 'Career',
+    'access arguments' => array('access content'),
+    'page callback' => 'jobvite_jobs_list_page',
+    'file' => 'jobvite.pages.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items[$prefix_path . 'job'] = array(
+    'title' => 'Career',
+    'access arguments' => array('access content'),
+    'page callback' => 'jobvite_redirect',
+    'file' => 'jobvite.pages.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function jobvite_theme() {
+  return array(
+    'jobvite_job' => array(
+      'template' => 'theme/jobvite-job',
+      'variables' => array(
+        'job' => NULL,
+      ),
+      'file' => 'jobvite.theme.inc',
+    ),
+    'jobvite_jobs_list' => array(
+      'template' => 'theme/jobvite-jobs-list',
+      'variables' => array(
+        'jobs' => array(),
+      ),
+      'file' => 'jobvite.theme.inc',
+    ),
+  );
+}
+
+/**
+ * Returns the path to a job details page.
+ *
+ * @param object $job
+ *   The data object for the job. It must have the following properties:
+ *     - id: The ID of the Job
+ *     - category: The category of the job
+ *     - title: The title of the job.
+ *
+ * @return string
+ *   The path for the job details page.
+ */
+function jobvite_page_path($job) {
+  ctools_include('cleanstring');
+  $settings = array(
+    'lower case' => TRUE,
+    'transliterate' => TRUE,
+  );
+  $prefix_path = variable_get('jobvite_path_prefix', "");
+  return $prefix_path . implode('/', array(
+    ctools_cleanstring($job->category, $settings),
+    ctools_cleanstring($job->title, $settings),
+    'job',
+    $job->id,
+  ));
+}
+
+/**
+ * Implements hook_cron().
+ */
+function jobvite_cron() {
+  $last = variable_get('jobvite_last_cron', 0);
+  $interval = variable_get('jobvite_cron_interval', 3600);
+
+  if ((REQUEST_TIME - $last) > $interval) {
+    variable_set('jobvite_last_cron', REQUEST_TIME);
+    jobvite_enqueue_request();
+  }
+}
+
+/**
+ * Implements hook_cron_queue_info().
+ */
+function jobvite_cron_queue_info() {
+  return array(
+    'jobvite_queue_fetch' => array(
+      'worker callback' => 'jobvite_queue_fetch_worker',
+      'skip on cron' => FALSE,
+      'time' => 30,
+    ),
+    'jobvite_queue_db' => array(
+      'worker callback' => 'jobvite_queue_db_worker',
+      'skip on cron' => FALSE,
+      'time' => 30,
+    ),
+  );
+}
+
+/**
+ * Setup request parameters for the Jobvite API.
+ *
+ * Enqueue a request in the jobvite_queue_fetch queue.
+ * The starting postion for the request is set using a parameter and the total
+ * number of returns is set by the jobvite_result_count variable.
+ *
+ * @param int $start
+ *   Starting position for Jobvite pagination.
+ * @param int $timestamp
+ *   (optional) Time of the first request that can be passed to following
+ *   requests to make the deleting process easier.
+ */
+function jobvite_enqueue_request($start = 1, $timestamp = NULL) {
+  $count = variable_get('jobvite_result_count', 100);
+
+  $params = array(
+    'companyId' => variable_get('jobvite_company_id', NULL),
+    'api' => variable_get('jobvite_api', NULL),
+    'sc' => variable_get('jobvite_secret_key', NULL),
+    'start' => $start,
+    'count' => $count,
+  );
+
+  if (!empty(variable_get('jobvite_job_type', ""))) {
+    $params['type'] = variable_get('jobvite_job_type', "");
+  }
+
+  $params['availableTo'] = variable_get('jobvite_available_to', "External");
+
+  if (!empty(variable_get('jobvite_job_category', ""))) {
+    $params['category'] = variable_get('jobvite_job_category', "");
+  }
+
+  if (!empty(variable_get('jobvite_job_department', ""))) {
+    $params['department'] = variable_get('jobvite_job_department', "");
+  }
+
+  if (!empty(variable_get('jobvite_job_location', ""))) {
+    $params['location'] = variable_get('jobvite_job_location', "");
+  }
+
+  if (!empty(variable_get('jobvite_job_region', ""))) {
+    $params['region'] = variable_get('jobvite_job_region', "");
+  }
+
+  $uri = variable_get('jobvite_json_feed_url', 'https://api.jobvite.com/v1/jobFeed') . '?' . drupal_http_build_query($params);
+  $queue = DrupalQueue::get('jobvite_queue_fetch');
+  $item = array(
+    'uri' => $uri,
+    'timestamp' => $timestamp ? $timestamp : REQUEST_TIME,
+  );
+  $queue->createItem($item);
+}
+
+/**
+ * Worker function for jobvite_queue_fetch.
+ *
+ * Each item is a separate request to the Jobvite API. The requests returns jobs
+ * listing that are then added to the jobvite_queue_db queue. Following the
+ * request we are able to determine if subsequent requests are needed to
+ * retrieve more job listings. When all jobs have been retrieve a delete item is
+ * added as the last item.
+ *
+ * @param array $item
+ *   A work unit (ie. queue item), an array containing:
+ *   - uri: url of the Jobvite feed with all the specific GET parameters
+ *   - request_options: headers and context for the request
+ *   - timestamp: time of last the request, used to identify older job listings
+ *     to be removed.
+ */
+function jobvite_queue_fetch_worker($item) {
+  // Make a request to the Jobvite API.
+  $result = drupal_http_request($item['uri']);
+  $result = json_decode($result->data);
+  if (($error = json_last_error()) == JSON_ERROR_NONE) {
+
+    $start = $result->filterCriteria->start;
+    $count = $result->filterCriteria->count;
+    $total = $result->total;
+
+    // Add all jobs to queue that handles DB merge.
+    $queue = DrupalQueue::get('jobvite_queue_db');
+    foreach ($result->jobs as $job) {
+      $merge_item = array(
+        'operation' => 'merge',
+        'id' => $job->id,
+        'data' => $job,
+        'timestamp' => $item['timestamp'],
+      );
+      $queue->createItem($merge_item);
+    }
+
+    // Add another request to the queue for the remaining jobs
+    // or add a delete item at the end of the DB queue.
+    if (($start + $count) <= $total) {
+      jobvite_enqueue_request($start + $count, $item['timestamp']);
+    }
+    else {
+      $delete_item = array(
+        'operation' => 'delete',
+        'timestamp' => $item['timestamp'],
+      );
+      $queue->createItem($delete_item);
+    }
+  }
+  else {
+    watchdog('jobvite', 'Error when parsing JSON from @url: @msg', array(
+      '@url' => str_replace(variable_get('jobvite_company_key', NULL), '<secret key>', $item['uri']),
+      '@msg' => json_last_error_msg(),
+    ));
+  }
+}
+
+/**
+ * Worker function for jobvite_queue_db.
+ *
+ * Each item can do one of two things: merge an entry to the database or delete
+ * all the older job listings. This behavior is set by the operation element
+ * inside the item array.
+ *
+ * @param array $item
+ *   A work unit (ie. queue item), an array containing:
+ *   - operation: merge or delete
+ *   - id: the job ID (only present if the operation is set to merge)
+ *   - data: the complete job data object as returned by Jobvite (only present
+ *     if the operation is set to merge).
+ *   - timestamp: time of last the request, used to identify older job listings
+ *     to be removed.
+ */
+function jobvite_queue_db_worker($item) {
+  // Add or update job listings.
+  if ($item['operation'] == 'merge') {
+    db_merge('jobvite_listing')
+      ->key(array('id' => $item['data']->id))
+      ->fields(array(
+        'id' => $item['data']->id,
+        'title' => $item['data']->title,
+        'location' => $item['data']->location,
+        'category' => $item['data']->category,
+        'timestamp' => $item['timestamp'],
+        'data' => json_encode($item['data']),
+      ))
+      ->execute();
+  }
+
+  // Delete job listings that are no longer in the Jobvite feed.
+  if ($item['operation'] == 'delete') {
+    db_delete('jobvite_listing')
+      ->condition('timestamp', $item['timestamp'], '<')
+      ->execute();
+  }
+}
+
+/**
+ * Load a job.
+ *
+ * @param string $id
+ *   The identifier of the job to load.
+ *
+ * @return bool|object
+ *   The job object, or FALSE if the job could not be retrieved.
+ */
+function jobvite_job_load($id) {
+  if (!is_string($id)) {
+    throw new InvalidArgumentException('The id argument must be a string.');
+  }
+
+  $jobs = jobvite_job_load_multiple(array('id' => $id));
+
+  return $jobs ? $jobs[0] : FALSE;
+}
+
+/**
+ * Load multiple jobs.
+ *
+ * @param array $conditions
+ *   Array of conditions to limit the returned jobs. Filtering on `id`,
+ *   `location` and `category` are available. Filtered column are used as index
+ *    and the required value(s) as value (scalar or array).
+ * @param array $orderBy
+ *   Order by conditions, as an array. Order field(s) as key(s), direction (ASC
+ *   or DESC) as value. Field(s) can also be passed as value(s) for numeric keys
+ *   (direction will then be ASC).
+ *
+ * @return array
+ *   An array of job(s) or FALSE if no jobs are found.
+ */
+function jobvite_job_load_multiple(array $conditions = array(), array $orderBy = array()) {
+  $query = db_select('jobvite_listing', 'l')->fields('l', array('data'));
+
+  $conditions = array_intersect_key($conditions, array_flip(array(
+    'id',
+    'location',
+    'category',
+  )));
+  foreach ($conditions as $field => $value) {
+    $query->condition($field, $value);
+  }
+  foreach ($orderBy as $field => $direction) {
+    if (is_numeric($field)) {
+      $field = $direction;
+      $direction = 'ASC';
+    }
+    $query->orderBy($field, $direction);
+  }
+  $results = $query->execute()->fetchAll();
+
+  if (!empty($results)) {
+
+    $results = array_map(function ($job) {
+      $job = json_decode($job->data);
+      if (($error = json_last_error()) == JSON_ERROR_NONE) {
+        return $job;
+      }
+      else {
+        watchdog('jobvite', 'Error when parsing JSON from DB: @msg', array(
+          '@msg' => json_last_error_msg(),
+        ));
+        return FALSE;
+      }
+    }, $results);
+
+    return $results;
+  }
+
+  return [];
+}
+
+/**
+ * Title callback for a job details page.
+ *
+ * @param object $job
+ *   The job object.
+ *
+ * @return string
+ *   The label of the job page.
+ *
+ * @see jobvite_menu()
+ */
+function jobvite_job_page_title($job) {
+  return t("Details of !title", array(
+    '!title' => $job->title,
+  ));
+}

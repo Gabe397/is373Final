@@ -1,0 +1,57 @@
+<?php
+
+/**
+ * @file
+ * Install and update hook implementations for the Jobvite module.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function jobvite_schema() {
+  $schema['jobvite_listing'] = array(
+    'description' => 'The table for job postings.',
+    'fields' => array(
+      'id' => array(
+        'description' => 'Job ID',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'title' => array(
+        'description' => 'Job title',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'location' => array(
+        'description' => 'Job location',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'category' => array(
+        'description' => 'Job category',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'timestamp' => array(
+        'description' => 'Time of the last update of the job posting',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'data' => array(
+        'description' => 'JSON of the whole job description',
+        'type' => 'blob',
+      ),
+    ),
+  );
+
+  return $schema;
+}
