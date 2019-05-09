@@ -406,7 +406,7 @@ function dbtng_example_list() {
       $rows[] = array_map('check_plain', (array) $entry);
     }
     // Make a table for them.
-    $header = array(t('ID'), t('Applications Submitted'), t('Company Name'), t('Job Title'), t('Rating'));
+    $header = array(t('ID'), t('Applications Submitted'), t('Job Link'), t('Date Submitted'), t('Rating'));
     $output .= theme('table', array('header' => $header, 'rows' => $rows));
   }
   else {
