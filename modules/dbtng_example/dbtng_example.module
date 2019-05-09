@@ -357,7 +357,7 @@ function dbtng_example_menu() {
   $items = array();
 
   $items['examples/dbtng'] = array(
-    'title' => 'DBTNG Example',
+    'title' => 'Job Listing',
     'page callback' => 'dbtng_example_list',
     'access callback' => TRUE,
   );
