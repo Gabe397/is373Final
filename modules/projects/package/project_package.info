@@ -1,0 +1,17 @@
+name = Project package
+description = Provides support for packages made up of releases from separate projects.
+package = Project
+dependencies[] = project:project
+dependencies[] = project:project_release
+dependencies[] = views:views
+core = 7.x
+
+stylesheets[all][] = project_package.css
+
+files[] = views/handlers/project_package_handler_field_local_patch_count.inc
+
+; Information added by Drupal.org packaging script on 2019-04-22
+version = "7.x-2.0-alpha3+84-dev"
+core = "7.x"
+project = "project"
+datestamp = "1555965490"

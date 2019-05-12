@@ -1,0 +1,23 @@
+<?php
+
+/**
+ * Tests for project creation.
+ */
+class ProjectTestCase extends ProjectWebTestCase {
+
+  public static function getInfo() {
+    return array(
+      'name' => 'Project creation functionality',
+      'description' => 'Test Project module functionality.',
+      'group' => 'Project',
+    );
+  }
+
+  /**
+   * Test that project node type is create properly.
+   */
+  function testProjectNodeType() {
+
+  }
+
+}
