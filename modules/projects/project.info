@@ -1,0 +1,32 @@
+name = Project
+description = Make node types into Projects.
+package = Project
+
+dependencies[] = drupal:system (>= 7.40)
+dependencies[] = machine_name:machine_name
+dependencies[] = drupal:list
+
+files[] = tests/project.test
+files[] = tests/integration/project_creation.test
+files[] = tests/integration/maintainers.test
+files[] = tests/spec/install.test
+
+files[] = views/handlers/project_handler_argument_term_node_tid_depth_project.inc
+files[] = views/handlers/project_handler_filter_project_sort_method.inc
+files[] = views/handlers/project_handler_filter_project_status.inc
+files[] = views/handlers/project_handler_filter_project_behavior.inc
+
+files[] = views/plugins/project_plugin_argument_default_project_type.inc
+files[] = views/plugins/project_plugin_argument_validate_project_nid.inc
+files[] = views/plugins/project_plugin_argument_validate_project_node_type.inc
+files[] = views/plugins/project_plugin_row_project_fields_view.inc
+files[] = views/plugins/project_plugin_row_project_node_view.inc
+files[] = views/plugins/project_plugin_style_project_list.inc
+
+core = 7.x
+
+; Information added by Drupal.org packaging script on 2019-04-22
+version = "7.x-2.0-alpha3+84-dev"
+core = "7.x"
+project = "project"
+datestamp = "1555965490"
